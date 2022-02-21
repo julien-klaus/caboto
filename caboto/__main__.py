@@ -7,6 +7,7 @@ from pprint import pprint
 
 import api
 
+from qengine import Query
 
 def dir_path(_path):
     if os.path.isdir(_path):
@@ -21,6 +22,7 @@ parser.add_argument("--plot", "-p", help="Plot the graph using matplotlib.", act
 parser.add_argument("--exclude", "-e", help="Exclude this entities from plotting")
 parser.add_argument("--run", "-r", help="Run a function from the Caboto API module.")
 parser.add_argument("--query", "-q", help="Run a query from Caboto's query library.")
+parser.add_argument("--interactive", "-i", help="Enter the interactive mode.", action="store_true")
 parser.add_argument(
     "--args",
     "-a",
@@ -34,6 +36,20 @@ if __name__ == "__main__":
     api.create_graph_from_path(args.manifests)
     api.discover_relations()
     print(api.CABOTO_GRAPH)
+    if args.interactive:
+        print("Enter interactive mode. Try queries like 'GET nodes WHERE type=Pod'.\nExit with 'exit'.")
+        query_string = ""
+        while query_string != "exit":
+            query_string = input(">>> ")
+            if query_string == "exit":
+                break
+            try:
+                query = Query(query_string, api.CABOTO_GRAPH)
+                result = query.execute()
+                print(result, "\n")
+            except Exception as e:
+                print("Unknown query:", e)
+        exit(0)
     if args.query:
         if args.args:
             _args = {item.split(":")[0]: item.split(":", 1)[1] for item in str(args.args).split(",")}
