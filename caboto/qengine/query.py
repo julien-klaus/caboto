@@ -1,5 +1,7 @@
 from string import ascii_lowercase, ascii_uppercase
 
+from qgraph import LogicNode, PropertyNode, QGraph
+
 """
 nodes = []
 for node, labels in source_graph.nodes.items():
@@ -111,6 +113,7 @@ class Parser:
         self.properties = None
         self.symbol = None
         self.description = None
+        self.property_graph = None
         self._get_symbol()
         self._query()
 
@@ -130,7 +133,7 @@ class Parser:
             self._variable()
             if self._description_equal("keyword") and self._symbol_equal("where"):
                 self._get_symbol()
-                self._property_or()
+                self.property_graph = QGraph(self._property_or())
             else:
                 raise Exception("Please define properties using 'WITH'.")
         else:
@@ -169,16 +172,25 @@ class Parser:
 
     def _property_or(self):
         """ _property_or = _property_and [ "OR" propertiyAnd """
-        self._property_and()
-        # TODO
+        node = self._property_and() 
+        while self._symbol_equal("or"):
+            self.get_symbol()
+            node = LogicNode("or", left=node, right=self._property_or())
+        return node
 
     def _property_and(self):
         """ _property_and = _property [ "AND" _property ] """
-        self._property()
-        # TODO
+        node = self._property()
+        while self._symbol_equal("and"):
+            self._get_symbol()
+            node = LogicNode("and", left=node, right=self._property_or())
+        return node
 
     def _property(self):
         """ _property = ( { [ identifier "." ] ( "type" | "label" | "name" ) "=" identifier ) | "(" _property_or ")" """
+
+        # TODO: Allow other properties, see above
+
         property = Property()
         if self._description_equal("identifier"):
             property.ident = self.symbol
@@ -193,6 +205,7 @@ class Parser:
                     self._get_symbol()
                     if self._description_equal("identifier"):
                         property.target = self.symbol
+                        self._get_symbol()
                     else:
                         raise Exception("Identifier for _property excepted.")
                 else:
@@ -200,6 +213,8 @@ class Parser:
             else:
                 raise Exception("Type, label or name expected")
         self.properties = property
+        node = PropertyNode(property)
+        return node
 
 
 class Scanner:
@@ -260,8 +275,11 @@ class Input:
 
 
 if __name__ == "__main__":
-    query = "GET nodes WHERE type=Pod"
+    query = "GET nodes WHERE type=Pod and type=Service"
     s = Parser(query)
     print(s.properties)
+    s.property_graph.draw()
+
+
 
 
