@@ -1,6 +1,6 @@
 from string import ascii_lowercase, ascii_uppercase
 
-from qgraph import LogicNode, PropertyNode, QGraph
+from .qgraph import LogicNode, PropertyNode, QGraph
 
 """
 nodes = []
@@ -64,13 +64,18 @@ class Query:
             return nodes
 
         elif self.parser.query_type == "edges":
-            pass
-            #TODO: see aboce
+            edges = []
+            for (source, target), labels in self.graph.edges.items():
+                # print(source, target, labels)
+                if self.parser.properties.property in labels:
+                    if labels[self.parser.properties.property] == self.parser.properties.target:
+                        edges.append((source, target))
+            return edges
         else:
             raise Exception("Currently we can only get nodes or edges.")
 
 
-KEYWORDS = ["get", "where", "nodes", "edges", "and", "or", "type"]
+KEYWORDS = ["get", "where", "nodes", "edges", "and", "or", "type", "label"]
 SYMBOLS = {
     ".": "dot",
     "(": "lbracket",
