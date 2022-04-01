@@ -1,50 +1,8 @@
 from string import ascii_lowercase, ascii_uppercase
 
-from .qgraph import LogicNode, PropertyNode, QGraph
+import networkx as nx
 
-"""
-nodes = []
-for node, labels in source_graph.nodes.items():
-    if 'type' in labels:
-        if labels['type'] == "Pod":
-            nodes.append(node)
-"""
-
-"""
-edges = []
-for (source, target), labels in source_graph.edges.items():
-    if "label" in labels:
-        if labels["label"] == "hosts":
-            edges.append((source, target))
-"""
-
-"""
-IngressToContainerImage wäre eigentlich so eine query.
-Das wäre dann irgendwie so:
-1) hole alle Knoten vom Typ "Container"
-2) filtere die die eine Verbindung (label=selects) zu einen Knoten vom Typ "Service" haben
-3) filtere alle Knoten vom Typ "Service" die eine Verbindung (label=serves) zu Knoten vom Typ "Ingress" haben
-4) map die route (z.B. /* für alles, oder /admin/* nur für diesen URL präfix) auf die verbleibenden Container
-das ist halt eine komplexe traversierung mit einer reihe an bedingungen
-das ergebnis wäre dann
-[(Ingress <admin.mysite.com/admin/*>, Container <myfancy-admin>), ... ]
-"""
-
-""" Gib mir alle Knoten vom Typ "Pod", welche mit dem Knoten <NAME> vom Typ "Service" über eine Beziehung mit Label "selects" verbunden sind """
-
-
-# GET nodes WHERE type=Pod
-# GET nodes WHERE type=ConfigMap
-# GET nodes WHERE type=Service
-# GET nodes WHERE type=Ingress
-# GET nodes WHERE type=Application
-# GET edges WHERE label=hosts
-# GET paths WITH START type=Service AND data.name=<name> END type=Pod
-# GET paths WITH START label:serves and type=Pod
-
-# GET nodes n WHERE n.type=Container AND n - selects -> m.type=Service AND m.type=Service - servers -> l.type=Ingress
-
-
+from .qgraph import LogicNode, QGraph
 
 alpha = list(ascii_lowercase) + list((ascii_uppercase))
 number = list(range(9))
@@ -52,30 +10,38 @@ number = list(range(9))
 class Query:
     def __init__(self, query, graph):
         self.parser = Parser(query)
-        self.graph = graph
+        self.graph = graph # Kubernetes Graph
 
     def execute(self):
         if self.parser.query_type == "nodes":
             nodes = []
-            for node, labels in self.graph.nodes.items():
-                if self.parser.properties.property in labels:
-                    if labels[self.parser.properties.property] == self.parser.properties.target:
-                        nodes.append(node)
+            context = {self.parser.identifier: None}
+            for node, _ in self.graph.nodes.items():
+                # set context 
+                context[self.parser.identifier] = node
+                if self.parser.property_graph.execute(self.graph, context):
+                    nodes.append(node)
+                # reset context
+                context = {self.parser.identifier: None}
             return nodes
-
         elif self.parser.query_type == "edges":
             edges = []
-            for (source, target), labels in self.graph.edges.items():
-                # print(source, target, labels)
-                if self.parser.properties.property in labels:
-                    if labels[self.parser.properties.property] == self.parser.properties.target:
-                        edges.append((source, target))
+            context = {(self.parser.identifier[0], self.parser.identifier[1]): None}
+            for (source, target), _ in self.graph.edges.items():
+                # set context
+                context[(self.parser.identifier[0], self.parser.identifier[1])] = (source, target)
+                context[self.parser.identifier[0]] = source
+                context[self.parser.identifier[1]] = target
+                if self.parser.property_graph.execute(self.graph, context):
+                    edges.append((source, target))    
+                # reset context
+                context = {self.parser.identifier[0]: None, self.parser.identifier[1]: None}
             return edges
         else:
             raise Exception("Currently we can only get nodes or edges.")
+    
 
-
-KEYWORDS = ["get", "where", "nodes", "edges", "and", "or", "type", "label"]
+KEYWORDS = ["get", "where", "nodes", "edges", "and", "or", "type", "label", "name"]
 SYMBOLS = {
     ".": "dot",
     "(": "lbracket",
@@ -91,6 +57,39 @@ class Property:
         self.property = None
         self.target = None
 
+    def get_children(self):
+        return []
+
+    def execute(self, graph, context):
+        # check if there is a an ident
+        # breakpoint()
+        if self.ident and self.ident in context:
+            attributes = nx.get_node_attributes(graph, self.property)
+            if context[self.ident] in attributes and attributes[context[self.ident]] == self.target:
+                # breakpoint()
+                return True, context
+        else:
+            # check if the ident is in some tuple
+            for key in context:
+                if isinstance(key, tuple):
+                    (source, target) = key
+                    if self.ident == source:
+                        breakpoint()
+                        attributes = nx.get_edge_attributes(graph, self.property)
+                        # check if there is a successor
+                        for target in graph.successors(source):
+                            if attributes[(source, target)] == self.target:
+                                return True, contex
+                    elif self.ident == target:
+                        breakpoint()
+                        attributes = nx.get_edge_attributes(graph, self.property)
+                        # check if there is a predecessor
+                        for source in graph.predecessors(target):
+                            if attributes[(source, target)] == self.target:
+                                return True, context
+                        pass
+        return False, context
+
     def __str__(self):
         if not self.target:
             return ""
@@ -98,16 +97,19 @@ class Property:
         property += f"{self.property}={self.target}"
         return property
 
+    def __repr__(self):
+        return str(self)
+
 
 class Parser:
     """
     Parser for network queries.
 
     query = "GET" _variable "WITH" _property_or
-    _variable = "nodes" [ identifier ] | "edges" [ "(" identifier "," identifier")" ]
+    _variable = "nodes" identifier | "edges" [ "(" identifier "," identifier")" ]
     _property_or = _property_and [ "OR" propertiyAnd ]
     _property_and = _property [ "AND" _property ]
-    _property = ( { [ identifier "." ] ( "type" | "label" | "name" ) "=" identifier ) | "(" _property_or ")"
+    _property = ( { identifier "." ( "type" | "label" | "name" ) "=" identifier ) | "(" _property_or ")"
     identifier = _alpha_ { _alpha_ | _number_}
     """
     def __init__(self, query):
@@ -115,12 +117,12 @@ class Parser:
         self.scanner = Scanner(query)
         self.query_type = None
         self.identifier = None
-        self.properties = None
         self.symbol = None
         self.description = None
         self.property_graph = None
         self._get_symbol()
         self._query()
+        self.property_graph.draw()
 
     def _get_symbol(self):
         self.symbol, self.description = self.scanner.get_symbol()
@@ -145,12 +147,15 @@ class Parser:
             raise Exception("Queries should start with 'GET'.")
 
     def _variable(self):
-        """ _variable = "nodes" [ identifier ] | "edges" [ "(" identifier "," identifier")" ] """
+        """ _variable = "nodes" identifier | "edges" "(" identifier "," identifier")" """
         if self._description_equal("keyword") and self._symbol_equal("nodes"):
             self.query_type = "nodes"
             self._get_symbol()
             if self._description_equal("identifier"):
                 self.identifier = self.symbol
+                self._get_symbol()
+            else:
+                raise Exception("Please define an identifier for the nodes.")
         elif self._description_equal("keyword") and self._symbol_equal("edges"):
             self.query_type = "edges"
             self._get_symbol()
@@ -174,13 +179,18 @@ class Parser:
                         raise Exception("Comma expected.")
                 else:
                     raise Exception("Identifier for source expected.")
+            else:
+                raise Exception("Please define an identifier for the edges.")
 
     def _property_or(self):
         """ _property_or = _property_and [ "OR" propertiyAnd """
         node = self._property_and() 
         while self._symbol_equal("or"):
-            self.get_symbol()
-            node = LogicNode("or", left=node, right=self._property_or())
+            self._get_symbol()
+            tmp = LogicNode("or")
+            tmp.add_child(node)
+            tmp.add_child(self._property_or())
+            node = tmp
         return node
 
     def _property_and(self):
@@ -188,20 +198,26 @@ class Parser:
         node = self._property()
         while self._symbol_equal("and"):
             self._get_symbol()
-            node = LogicNode("and", left=node, right=self._property_or())
+            tmp = LogicNode("and")
+            tmp.add_child(node)
+            tmp.add_child(self._property_or())
+            node = tmp
         return node
 
     def _property(self):
-        """ _property = ( { [ identifier "." ] ( "type" | "label" | "name" ) "=" identifier ) | "(" _property_or ")" """
-
-        # TODO: Allow other properties, see above
-
+        """ _property = ( { identifier "." ( "type" | "label" | "name" ) "=" identifier ) | "(" _property_or ")" """
         property = Property()
+        if self._description_equal("lbracket"):
+            self._get_symbol()
+            
         if self._description_equal("identifier"):
+            #TODO: check for tuple identifier
             property.ident = self.symbol
             self._get_symbol()
             if self._description_equal("dot"):
                 self._get_symbol()
+        else:
+            raise Exception("Each property needs an identifier.")
         if self._description_equal("keyword"):
             if self.symbol in ['type', 'label', 'name']:
                 property.property = self.symbol
@@ -212,14 +228,12 @@ class Parser:
                         property.target = self.symbol
                         self._get_symbol()
                     else:
-                        raise Exception("Identifier for _property excepted.")
+                        raise Exception(f"Not allowed symbol '{self.symbol}'. Identifier for property excepted.")
                 else:
                     raise Exception("Equal sign expected.")
             else:
                 raise Exception("Type, label or name expected")
-        self.properties = property
-        node = PropertyNode(property)
-        return node
+        return property
 
 
 class Scanner:
