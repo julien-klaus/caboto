@@ -7,7 +7,6 @@ from graphviz import Digraph
 class Type(Enum):
     AND = 1
     OR = 2
-    PROPERTY = 3
 
 
 class QGraph:
@@ -30,50 +29,43 @@ class QGraph:
             for child in node.get_children():
                 g.edge(str(node_to_index[node]), str(node_to_index[child]))
         g.render("property_graph.pdf")
-
+    
+    def execute(self, graph, context):
+        valid, context = self.root.execute(graph, context)
+        return valid
 
 class LogicNode:
-    def __init__(self, label, left, right):
+    def __init__(self, label):
         self.label = label
         if self.label == "and":
             self.type = Type.AND
-        elif self.label == "or":
-            self.type = Type.PROPERTY
-        else:
-            self.type = Type.PROPERTY
-        self.left = left
-        self.right = right
-    
-    def set_left(self, left):
-        self.left = left
+        if self.label == "or":
+            self.type = Type.OR
+        self.children = []
 
-    def set_right(self, right):
-        self.right = right
+    def execute(self, graph, context):
+        valid = True
+        change = True
+        contex_tmp = context
+        while change:
+            change = False
+            for node in self.children:
+                valid_temp, context_tmp = node.execute(graph, context)
+                if context_tmp != context:
+                    breakpoint()
+                    change = True
+                context = context_tmp
+                if self.label == "and":
+                    valid = valid and valid_temp
+                else:
+                    valid = valid or valid_temp
+        return valid, context
+    
+    def add_child(self, child):
+        self.children.append(child)
 
     def get_children(self):
-        return [self.left, self.right]
+        return self.children
 
     def __str__(self):
         return self.label
-
-
-class PropertyNode:
-    def __init__(self, property):
-        self.property = property
-        self.children = {}
-
-    def get_children(self):
-        return self.children.keys()
-
-    def add_child(child, label):
-        self.children[child] = label
-    
-    def __str__(self):
-        return str(self.property)
-
-
-
-
-
-
-
