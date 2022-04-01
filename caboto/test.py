@@ -21,12 +21,14 @@ def test(api, query_string, query_file):
 
 
 def test_all(api):
-    assert test(api, "get nodes where type=Application", "AllApplications")
-    assert test(api, "get nodes where type=Ingress", "AllIngress")
-    assert test(api, "get nodes where type=Pod", "AllPods")
-    assert test(api, "get nodes where type=Service", "AllServices")
-    assert test(api, "get edges where label=hosts", "IngressToHost")
-    assert test(api, "get nodes where type=ConfigMap", "AllConfigMaps")
+    assert test(api, "get nodes n where n.type=Application", "AllApplications")
+    assert test(api, "get nodes n where n.type=Ingress", "AllIngress")
+    assert test(api, "get nodes n where n.type=Pod", "AllPods")
+    assert test(api, "get nodes n where n.type=Service", "AllServices")
+    assert test(api, "get edges (m,n) where (m,n).label=hosts", "IngressToHost")
+    assert test(api, "get nodes n where n.type=ConfigMap", "AllConfigMaps")
+    assert test(api, "get edges (m,n) where m.label=serves and n.type=Pod", "IngressToContainerImage")
+    assert test(api, "get edges (m,n) where n.type=Pod and m.type=Service and m.name=admin", "ServiceToPod")
     return True
 
 if __name__ == "__main__":
@@ -36,7 +38,7 @@ if __name__ == "__main__":
     api.discover_relations()
     graph = api.CABOTO_GRAPH
 
-    # run tests
+    # run tests    
     print(f"Test {'passed' if test_all(api) else 'failed'}")
 
 
